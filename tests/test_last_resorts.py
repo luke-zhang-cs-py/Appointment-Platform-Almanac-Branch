@@ -19,6 +19,7 @@ normally -- which is exactly why they are worth executing at least once:
     False` never runs is a permission check nobody has watched refuse.
 """
 
+import io
 import sqlite3
 import types
 
@@ -336,6 +337,17 @@ def test_two_bookings_that_pass_the_free_check_still_cannot_collide(
     assert "just booked by someone else" in got.get_json()["error"]
 
 
+def _integrity_errors_as_built(module):
+    """INTEGRITY_ERRORS as `module`'s own source builds it, in a throwaway
+    namespace (see the first test below for why it is not reloaded)."""
+    with io.open(module.__file__, encoding="utf-8") as handle:
+        source = handle.read()
+    namespace = {"__name__": module.__name__ + "_probe",
+                 "__file__": module.__file__}
+    exec(compile(source, module.__file__, "exec"), namespace)
+    return namespace["INTEGRITY_ERRORS"]
+
+
 def test_a_postgres_integrity_error_is_caught_too(monkeypatch):
     """Both modules build their INTEGRITY_ERRORS tuple at import, and the
     psycopg2 half has never been built here because the driver is not
@@ -350,7 +362,6 @@ def test_a_postgres_integrity_error_is_caught_too(monkeypatch):
     Compiling against the real filename keeps the executed lines attributed
     to the real module, so this still counts as covering them.
     """
-    import io as _io
     import sys
 
     class FakeIntegrityError(Exception):
@@ -369,13 +380,7 @@ def test_a_postgres_integrity_error_is_caught_too(monkeypatch):
     from routes import appointment_routes
 
     for module in (mailer, appointment_routes):
-        with _io.open(module.__file__, encoding="utf-8") as handle:
-            source = handle.read()
-        namespace = {"__name__": module.__name__ + "_probe",
-                     "__file__": module.__file__}
-        exec(compile(source, module.__file__, "exec"), namespace)
-
-        errors = namespace["INTEGRITY_ERRORS"]
+        errors = _integrity_errors_as_built(module)
         assert FakeIntegrityError in errors, (
             f"{module.__name__} would not catch a Postgres integrity error")
         assert sqlite3.IntegrityError in errors, (
@@ -388,7 +393,6 @@ def test_without_the_postgres_driver_only_the_sqlite_error_is_caught(
     import fails, and each module's tuple has to fall back to the SQLite
     error alone rather than stopping the module from loading. Same
     throwaway-namespace technique, with the driver made unimportable."""
-    import io as _io
     import sys
 
     monkeypatch.setitem(sys.modules, "psycopg2", None)
@@ -397,13 +401,7 @@ def test_without_the_postgres_driver_only_the_sqlite_error_is_caught(
     from routes import appointment_routes
 
     for module in (mailer, appointment_routes):
-        with _io.open(module.__file__, encoding="utf-8") as handle:
-            source = handle.read()
-        namespace = {"__name__": module.__name__ + "_probe",
-                     "__file__": module.__file__}
-        exec(compile(source, module.__file__, "exec"), namespace)
-
-        assert namespace["INTEGRITY_ERRORS"] == (sqlite3.IntegrityError,), (
+        assert _integrity_errors_as_built(module) == (sqlite3.IntegrityError,), (
             f"{module.__name__} should fall back to the SQLite error alone")
 
 

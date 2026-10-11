@@ -17,7 +17,6 @@ backend is Postgres, placeholders are translated to "%s" automatically.
 import datetime as dt
 import re
 import sqlite3
-import threading
 from contextlib import contextmanager
 
 from flask import g
@@ -25,7 +24,6 @@ from flask import g
 from core.config import Config
 
 _IS_POSTGRES = Config.DATABASE_URL.startswith(("postgres://", "postgresql://"))
-_local = threading.local()
 
 # One timestamp format, one timezone, everywhere.
 #
