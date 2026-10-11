@@ -187,3 +187,17 @@ def test_declining_something_already_booked(client, provider, ctx):
     with pytest.raises(InviteError) as raised:
         coffee_chats.decline(invite["token"])
     assert "already been used" in str(raised.value)
+
+
+def test_a_day_the_host_has_blocked_is_not_offered(client, provider, ctx):
+    """A day with no starts left is left out of the list rather than shown
+    empty, so a guest never opens a day with nothing on it."""
+    invite = an_invite(client, provider, email="blocked@test.local")
+    first = dt.date.today() + dt.timedelta(days=1)
+    client.post("/api/availability/mine/block",
+                json={"date": first.isoformat()}, headers=provider["auth"])
+
+    offered = coffee_chats.available_slots(
+        coffee_chats.get_invite(invite["id"]), days=3, start_from=first)
+    assert [d["date"] for d in offered] == [
+        (first + dt.timedelta(days=n)).isoformat() for n in (1, 2)]

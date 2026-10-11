@@ -157,3 +157,14 @@ def test_an_admin_cannot_deactivate_themselves(client, admin):
 def test_patching_somebody_who_does_not_exist_is_404(client, admin):
     assert client.patch("/api/admin/users/9999", json={"role": "client"},
                         headers=admin["auth"]).status_code == 404
+
+
+def test_an_admin_cannot_demote_themselves(client, admin):
+    """The same lock-out as deactivating yourself, by another door: the only
+    admin who steps down leaves nobody with permission to undo it."""
+    res = client.patch(f"/api/admin/users/{admin['id']}",
+                       json={"role": "client"}, headers=admin["auth"])
+    assert res.status_code == 400
+    assert "role" in res.get_json()["error"]
+    assert client.get("/api/admin/users",
+                      headers=admin["auth"]).status_code == 200

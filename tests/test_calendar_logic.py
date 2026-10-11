@@ -204,3 +204,14 @@ def test_today_is_the_only_date_that_filters(ctx, provider, monkeypatch):
         "today offered a slot that had already started")
     assert len(for_today) < len(for_tomorrow), (
         "today should offer strictly fewer slots than the same window later")
+
+
+def test_a_date_that_has_already_gone_offers_nothing(ctx, provider):
+    """Every slot on a past date is in the past, not just the early ones.
+    Before this was checked, such a date fell through with nothing to
+    exclude and reported the provider's whole day as free."""
+    from domain.calendar_logic import get_free_slots
+    yesterday = (datetime.date.today()
+                 - datetime.timedelta(days=1)).isoformat()
+    assert get_free_slots(provider["id"], yesterday) == []
+    assert get_free_slots(provider["id"], a_weekday()), "the control"

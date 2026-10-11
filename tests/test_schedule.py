@@ -307,3 +307,20 @@ def test_a_row_with_an_unreadable_time_still_gets_a_sentence(client, booking,
     assert notifications.send_schedule_reminders(now=now) == 1
     row = sent("schedule_soon")[0]
     assert "Odd class" in row["subject"]
+
+
+def test_a_class_whose_email_was_not_taken_is_still_marked(client, booking,
+                                                           ctx, monkeypatch):
+    """The mark goes on whatever the mailer decided. A send that failed is
+    retried from email_log; scanning again must not queue a second message
+    about the same class."""
+    from notify import mailer
+    from notify import notifications
+    import_one(client, booking, 20)
+
+    with monkeypatch.context() as refusing:
+        refusing.setattr(mailer, "send", lambda message: None)
+        assert notifications.send_schedule_reminders() == 0
+
+    assert notifications.send_schedule_reminders() == 0
+    assert sent("schedule_soon") == []

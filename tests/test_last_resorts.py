@@ -380,3 +380,54 @@ def test_a_postgres_integrity_error_is_caught_too(monkeypatch):
             f"{module.__name__} would not catch a Postgres integrity error")
         assert sqlite3.IntegrityError in errors, (
             "and it must still catch the SQLite one")
+
+
+def test_without_the_postgres_driver_only_the_sqlite_error_is_caught(
+        monkeypatch):
+    """The other half of the tuple above: on a machine with no psycopg2 the
+    import fails, and each module's tuple has to fall back to the SQLite
+    error alone rather than stopping the module from loading. Same
+    throwaway-namespace technique, with the driver made unimportable."""
+    import io as _io
+    import sys
+
+    monkeypatch.setitem(sys.modules, "psycopg2", None)
+
+    from notify import mailer
+    from routes import appointment_routes
+
+    for module in (mailer, appointment_routes):
+        with _io.open(module.__file__, encoding="utf-8") as handle:
+            source = handle.read()
+        namespace = {"__name__": module.__name__ + "_probe",
+                     "__file__": module.__file__}
+        exec(compile(source, module.__file__, "exec"), namespace)
+
+        assert namespace["INTEGRITY_ERRORS"] == (sqlite3.IntegrityError,), (
+            f"{module.__name__} should fall back to the SQLite error alone")
+
+
+def test_a_postgres_write_returns_no_row_id_and_commits(as_postgres):
+    """lastrowid is a SQLite cursor attribute; on Postgres execute() hands
+    back None and callers that need the id use insert() instead."""
+    from core import database as db
+
+    conn = FakeConnection()
+    assert db.execute("UPDATE users SET name = ? WHERE id = ?", ("Ada", 1),
+                      conn=conn) is None
+    sql, params = conn.statements[0]
+    assert sql == "UPDATE users SET name = %s WHERE id = %s"
+    assert params == ("Ada", 1)
+    assert conn.commits == 1
+
+
+def test_postgres_takes_an_exclusive_table_lock_before_a_guarded_write(
+        as_postgres):
+    """SQLite's equivalent is BEGIN IMMEDIATE; Postgres locks rows rather
+    than the connection, so the guarded write asks for the whole table."""
+    from core import database as db
+
+    conn = FakeConnection()
+    assert db.lock_for_write("appointments", conn=conn) is conn
+    assert conn.statements == [
+        ("LOCK TABLE appointments IN EXCLUSIVE MODE", ())]
